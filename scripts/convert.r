@@ -22,7 +22,8 @@ create_matrix <- function(d) {
   return(mat)
 }
 
-pull_and_convert_win <- function(start_date, end_date) {
+
+pull_and_convert <- function(start_date, end_date) {
   
   create_filenames <- function(start_year_month, end_year_month) {
     dates <- seq(ym(start_year_month),
@@ -43,22 +44,33 @@ pull_and_convert_win <- function(start_date, end_date) {
   if (!dir.exists(tmp_dir)) dir.create(tmp_dir)
   if (!dir.exists(dest_dir)) dir.create(dest_dir)
   
+  bucket <- "asher-matrix-bucket"
+  
   for (i in seq_along(filenames)) {
-    # Pull file from nyc-tlc
+    shell(glue("aws s3 ls s3://{bucket} > {tmp_dir}file_list.txt"))
+    con <- file(glue("{tmp_dir}file_list.txt"))
+    done_files <- readLines(con)
+    done_files <- gsub("mat_", "", done_files)
+    close(con)
+    if (filenames[i] %in% done_files) next
+    
     object_uri <- glue("https://nyc-tlc.s3.amazonaws.com/trip+data/",
                        "{filenames[i]}")
     tmp_file <- glue("{tmp_dir}", "{filenames[i]}")
-    print(glue("Pulling from {object_uri} into {tmp_file}"))
     download.file(url = object_uri, destfile = tmp_file)
     
-    # create matrix and 
     d <- import(tmp_file)
     mat <- create_matrix(d)
-    dest_file <- glue("{dest_dir}", "mat_{filenames[i]}")
-    export(mat, dest_file)
-    print(glue("Created {dest_file}, removing {tmp_file}"))
+    dest_file <- glue("mat_{filenames[i]}")
+    dest <- glue("{dest_dir}", "{dest_file}")
+    export(mat, dest)
+    
+    shell(glue("aws s3 cp {dest} s3://{bucket}/{dest_file}"))
+  
     file.remove(tmp_file)
   }
+  
+  file.remove(glue("{tmp_dir}file_list.txt"))
 }
 
 find_most_connected <- function(year, month) {
